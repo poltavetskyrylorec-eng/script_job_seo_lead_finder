@@ -116,29 +116,41 @@ python -m dabud_job_agent.main run-all --push-approved   # also push approved (u
 3. Run `push-approved` (or wait for cron).
 4. Only rows with `approved=yes`, `send_status=not_sent`, and valid `contact_email` are pushed.
 
-## Production deploy (Render)
+## Production deploy (GitHub Actions)
 
-Primary prod target: **Render Cron Jobs** via `render.yaml`.
+Primary prod target: **GitHub Actions** cron workflows (`.github/workflows/`).
 
-| Cron | Schedule (UTC, Kyiv UTC+3 summer) | Command |
+| Workflow | Schedule (UTC, Kyiv UTC+3 summer) | Command |
 |---|---|---|
-| `dabud-run-all` | `0 23 * * *` → 02:00 Kyiv | `python -m dabud_job_agent.main run-all` |
-| `dabud-push-approved` | `0 6,12,21 * * *` → 09:00, 15:00, 00:00 Kyiv | `python -m dabud_job_agent.main push-approved` |
+| `run-all.yml` | `0 23 * * *` → 02:00 Kyiv | `python -m dabud_job_agent.main run-all` |
+| `push-approved.yml` | `0 6,12,21 * * *` → 09:00, 15:00, 00:00 Kyiv | `python -m dabud_job_agent.main push-approved` |
 
 Steps:
 1. Push repo to GitHub.
-2. Render Dashboard → **New Blueprint** → connect repo (`render.yaml`).
-3. Fill secret env vars (`sync: false` in blueprint).
-4. Manual **Trigger Run** once to verify.
+2. Repo → **Settings → Secrets and variables → Actions** → add repository secrets (see table below).
+3. **Actions** tab → select workflow → **Run workflow** to test manually.
+4. Cron starts automatically after the first push to the default branch.
 
-Winter (Kyiv UTC+2): shift cron +1 hour UTC.
+Winter (Kyiv UTC+2): shift cron +1 hour UTC in the workflow files.
 
-Docker image includes Python 3.12, Playwright Chromium, and Claude Code CLI.
+| Secret | Required |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | yes |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | yes |
+| `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | yes |
+| `SNOV_CLIENT_ID` / `SNOV_CLIENT_SECRET` | yes |
+| `SNOV_PLATFORM_LIST_ID` / `SNOV_PARTNER_LIST_ID` | yes |
+| `SNOV_CAMPAIGN_ID` | optional |
 
-## Legacy: Vercel / GitHub Actions
+Private repo free tier: 2,000 Actions minutes/month (~33 h). Full daily `run-all` (~90 min) uses ~2,700 min/month — expect ~$5–8 overage on GitHub Free, or make the repo public for unlimited minutes.
+
+## Alternative: Render
+
+`render.yaml` — Render Cron Jobs with Docker (Playwright + Claude CLI). Same cron schedule as above.
+
+## Legacy: Vercel
 
 - `vercel.json` + `api/cron/` — 5 min timeout, **not suitable** for full pipeline.
-- `.github/workflows/` — optional CI; currently runs with `DRY_RUN=true`.
 
 ## Troubleshooting
 
