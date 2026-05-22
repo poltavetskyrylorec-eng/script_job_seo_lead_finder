@@ -1,0 +1,63 @@
+name: Run All Pipeline
+
+on:
+  schedule:
+    # 23:00 UTC = 02:00 Kyiv (UTC+3, літній час). Зимою (UTC+2): змінити на "0 0 * * *".
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dabud-run-all
+  cancel-in-progress: false
+
+jobs:
+  run-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      APP_ENV: prod
+      DRY_RUN: "false"
+      TIMEZONE: Australia/Sydney
+      RUN_LOOKBACK_HOURS: "24"
+      MIN_COMPANY_SIZE: "5"
+      MIN_SALARY_AUD: "50000"
+      EXCLUDE_LOW_SALARY: "false"
+      HTTP_TIMEOUT_SECONDS: "20"
+      MAX_RETRIES: "3"
+      MAX_CONTACTS_PER_COMPANY: "2"
+      JOB_SEARCH_PROVIDER: browser
+      CLAUDE_MODEL: claude-sonnet-4-6
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+      SNOV_CLIENT_ID: ${{ secrets.SNOV_CLIENT_ID }}
+      SNOV_CLIENT_SECRET: ${{ secrets.SNOV_CLIENT_SECRET }}
+      SNOV_PLATFORM_LIST_ID: ${{ secrets.SNOV_PLATFORM_LIST_ID }}
+      SNOV_PARTNER_LIST_ID: ${{ secrets.SNOV_PARTNER_LIST_ID }}
+      SNOV_CAMPAIGN_ID: ${{ secrets.SNOV_CAMPAIGN_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          python -m playwright install --with-deps chromium
+          npm install -g @anthropic-ai/claude-code@latest
+
+      - name: Healthcheck
+        run: python -m dabud_job_agent.main healthcheck
+
+      - name: Run full pipeline
+        run: python -m dabud_job_agent.main run-all
