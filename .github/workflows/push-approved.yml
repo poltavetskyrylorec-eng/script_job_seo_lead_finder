@@ -1,0 +1,48 @@
+name: Push Approved
+
+on:
+  schedule:
+    # 06:00, 12:00, 21:00 UTC = 09:00, 15:00, 00:00 Kyiv (UTC+3, літній час).
+    # Зимою (UTC+2): змінити на "0 7,13,22 * * *".
+    - cron: "0 6,12,21 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: dabud-push-approved
+  cancel-in-progress: false
+
+jobs:
+  push-approved:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_ENV: prod
+      DRY_RUN: "false"
+      CLAUDE_MODEL: claude-sonnet-4-6
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+      SNOV_CLIENT_ID: ${{ secrets.SNOV_CLIENT_ID }}
+      SNOV_CLIENT_SECRET: ${{ secrets.SNOV_CLIENT_SECRET }}
+      SNOV_PLATFORM_LIST_ID: ${{ secrets.SNOV_PLATFORM_LIST_ID }}
+      SNOV_PARTNER_LIST_ID: ${{ secrets.SNOV_PARTNER_LIST_ID }}
+      SNOV_CAMPAIGN_ID: ${{ secrets.SNOV_CAMPAIGN_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Healthcheck
+        run: python -m dabud_job_agent.main healthcheck
+
+      - name: Push approved rows to Snov
+        run: python -m dabud_job_agent.main push-approved
