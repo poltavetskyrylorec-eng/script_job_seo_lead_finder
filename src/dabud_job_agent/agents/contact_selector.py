@@ -88,9 +88,24 @@ def score_contact(contact: Contact, company_type: CompanyType) -> int:
 def select_top_contacts(
     contacts: list[Contact], company_type: CompanyType, max_count: int = 2
 ) -> list[Contact]:
+    unique_contacts: list[Contact] = []
+    seen_keys: set[str] = set()
     for contact in contacts:
+        key = (contact.contact_email or "").strip().lower()
+        if not key:
+            key = (
+                f"{(contact.contact_linkedin_url or '').strip().lower()}|"
+                f"{(contact.contact_full_name or '').strip().lower()}|"
+                f"{(contact.company_domain or '').strip().lower()}"
+            )
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        unique_contacts.append(contact)
+
+    for contact in unique_contacts:
         contact.contact_priority_score = score_contact(contact, company_type)
-    sorted_contacts = sorted(contacts, key=lambda c: c.contact_priority_score, reverse=True)
+    sorted_contacts = sorted(unique_contacts, key=lambda c: c.contact_priority_score, reverse=True)
     selected = sorted_contacts[:max_count]
     for contact in selected:
         contact.selected_for_outreach = True

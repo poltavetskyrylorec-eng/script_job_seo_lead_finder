@@ -9,6 +9,33 @@ from dabud_job_agent.models import CompanyType, Contact, JobPosting, OutreachTra
 from dabud_job_agent.storage.google_sheets import GoogleSheetsStore
 
 LOGGER = logging.getLogger(__name__)
+INVALID_COMPANY_VALUES = {"", "unknown", "n/a", "none", "-"}
+SEQUENCE_FIELDS = (
+    "email_1_subject",
+    "email_1_body",
+    "email_2_subject",
+    "email_2_body",
+    "email_3_subject",
+    "email_3_body",
+    "email_4_subject",
+    "email_4_body",
+)
+
+
+def _is_invalid_company_name(value: str) -> bool:
+    return value.strip().lower() in INVALID_COMPANY_VALUES
+
+
+def _normalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _has_existing_sequence_content(row: dict[str, str]) -> bool:
+    return any(str(row.get(field, "")).strip() for field in SEQUENCE_FIELDS)
+
+
+def _has_contact_name(row: dict[str, str]) -> bool:
+    return bool(str(row.get("contact_first_name", "")).strip() or str(row.get("contact_full_name", "")).strip())
 
 
 def _job_from_lead_row(row: dict[str, str]) -> JobPosting:
@@ -77,18 +104,77 @@ async def run_generate_sequences(
     pending_leads = [
         row for row in sheet_store.get_rows("leads") if row.get("contact_status") == Status.PENDING_SEQUENCE
     ]
+    if run:
+        pending_leads = [row for row in pending_leads if str(row.get("run_id", "")) == run.run_id]
     generated = 0
     errors = 0
+    generated_contact_keys: set[tuple[str, str]] = set()
     for lead in pending_leads:
+        if _is_invalid_company_name(str(lead.get("company_name", ""))):
+            sheet_store.update_rows(
+                "leads",
+                "job_url",
+                str(lead.get("job_url", "")),
+                {
+                    "contact_status": Status.SKIPPED_INVALID_COMPANY,
+                    "sequence_status": Status.NEW,
+                    "error_message": "invalid_company_name",
+                },
+                limit=1,
+            )
+            continue
         job = _job_from_lead_row(lead)
         contacts_rows = sheet_store.get_rows("contacts", {"company_domain": job.company_domain, "run_id": job.run_id})
-        contacts = [_contact_from_row(row) for row in contacts_rows if row.get("selected_for_outreach")]
+        contacts_rows = [
+            row for row in contacts_rows if str(row.get("job_url", "")).strip() == job.job_url or not str(row.get("job_url", "")).strip()
+        ]
+        selected_rows = [row for row in contacts_rows if str(row.get("selected_for_outreach", "")).lower() == "true"]
+        eligible_rows = []
+        for row in selected_rows:
+            if _has_existing_sequence_content(row):
+                continue
+            if not _normalize_email(str(row.get("contact_email", ""))):
+                continue
+            if not _has_contact_name(row):
+                continue
+            row_company_name = str(row.get("company_name", "")).strip() or job.company_name
+            if _is_invalid_company_name(row_company_name):
+                continue
+            eligible_rows.append(row)
+        contacts = [_contact_from_row(row) for row in eligible_rows]
+        deduped_contacts: list[Contact] = []
+        seen_contact_keys: set[str] = set()
+        for contact in contacts:
+            email_key = _normalize_email(contact.contact_email)
+            if not email_key:
+                continue
+            if email_key in seen_contact_keys:
+                continue
+            seen_contact_keys.add(email_key)
+            deduped_contacts.append(contact)
+        contacts = deduped_contacts
         if not contacts:
+            if selected_rows and any(_has_existing_sequence_content(row) for row in selected_rows):
+                sheet_store.update_rows(
+                    "leads",
+                    "job_url",
+                    job.job_url,
+                    {
+                        "sequence_status": Status.SEQUENCE_DONE,
+                        "approval_status": "pending",
+                        "send_status": Status.NOT_SENT,
+                        "error_message": "",
+                    },
+                    limit=1,
+                )
             continue
         sequences = []
         lead_errors: list[str] = []
         for contact in contacts:
             if not contact.contact_email:
+                continue
+            dedupe_key = (job.run_id, _normalize_email(contact.contact_email))
+            if dedupe_key in generated_contact_keys:
                 continue
             try:
                 seq = await claude.generate_email_sequence(job, contact)
@@ -103,6 +189,7 @@ async def run_generate_sequences(
             seq.approval_status = "pending"
             seq.send_status = Status.NOT_SENT
             sequences.append(seq)
+            generated_contact_keys.add(dedupe_key)
         if sequences:
             sheet_store.append_sequences(sequences)
             generated += len(sequences)

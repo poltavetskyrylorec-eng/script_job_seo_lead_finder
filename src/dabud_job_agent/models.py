@@ -42,6 +42,7 @@ class Status(StrEnum):
     PUSHED_TO_SNOV = "pushed_to_snov"
     SNOV_ERROR = "snov_error"
     FAILED = "failed"
+    SKIPPED_INVALID_COMPANY = "skipped_invalid_company"
 
 
 class RawJobPosting(BaseModel):
@@ -131,6 +132,7 @@ class Contact(BaseModel):
 
 class EmailSequence(BaseModel):
     run_id: str
+    job_url: str = ""
     company_domain: str
     company_name: str
     contact_email: str

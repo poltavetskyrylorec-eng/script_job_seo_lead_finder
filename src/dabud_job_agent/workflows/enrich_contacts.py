@@ -12,6 +12,7 @@ from dabud_job_agent.models import CompanyType, Contact, RunStats, Status
 from dabud_job_agent.storage.google_sheets import GoogleSheetsStore
 
 LOGGER = logging.getLogger(__name__)
+INVALID_COMPANY_VALUES = {"", "unknown", "n/a", "none", "-"}
 JOB_BOARD_DOMAINS = {
     "seek.com.au",
     "au.seek.com",
@@ -86,6 +87,38 @@ def _is_usable_domain(domain: str) -> bool:
     return True
 
 
+def _is_invalid_company_name(value: str) -> bool:
+    return value.strip().lower() in INVALID_COMPANY_VALUES
+
+
+def _normalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def _dedupe_contacts(contacts: list[Contact]) -> list[Contact]:
+    unique: list[Contact] = []
+    seen: set[tuple[str, str, str]] = set()
+    for contact in contacts:
+        key = (
+            str(contact.run_id).strip(),
+            str(contact.company_domain).strip().lower(),
+            _normalize_email(contact.contact_email),
+        )
+        if not key[2]:
+            # Keep non-email contacts for debugging visibility, but avoid exact duplicates.
+            key = (
+                str(contact.run_id).strip(),
+                str(contact.company_domain).strip().lower(),
+                str(contact.contact_linkedin_url).strip().lower()
+                or str(contact.contact_full_name).strip().lower(),
+            )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(contact)
+    return unique
+
+
 async def run_enrich_contacts(
     settings: Settings, sheet_store: GoogleSheetsStore, run: RunStats | None = None
 ) -> RunStats:
@@ -101,9 +134,34 @@ async def run_enrich_contacts(
         for row in leads
         if row.get("contact_status") in pending_statuses
     ]
+    if run:
+        pending = [row for row in pending if str(row.get("run_id", "")) == run.run_id]
+    seen_contact_emails_by_run: dict[str, set[str]] = {}
     processed = 0
     total_contacts = 0
     for lead in pending:
+        lead_run_id = str(lead.get("run_id", "")).strip()
+        if lead_run_id not in seen_contact_emails_by_run:
+            existing_for_run = sheet_store.get_rows("contacts", {"run_id": lead_run_id})
+            seen_contact_emails_by_run[lead_run_id] = {
+                _normalize_email(str(row.get("contact_email", "")))
+                for row in existing_for_run
+                if _normalize_email(str(row.get("contact_email", "")))
+            }
+        company_name = str(lead.get("company_name", ""))
+        if _is_invalid_company_name(company_name):
+            sheet_store.update_rows(
+                "leads",
+                "job_url",
+                str(lead.get("job_url", "")),
+                {
+                    "contact_status": Status.SKIPPED_INVALID_COMPANY,
+                    "sequence_status": Status.NEW,
+                    "error_message": "invalid_company_name",
+                },
+                limit=1,
+            )
+            continue
         domain = _extract_domain(str(lead.get("company_domain") or ""))
         website = str(lead.get("company_website") or "").strip()
         if not domain:
@@ -166,7 +224,18 @@ async def run_enrich_contacts(
                 company_type=_safe_company_type(str(lead.get("company_type", CompanyType.UNKNOWN.value))),
                 max_count=settings.max_contacts_per_company,
             )
+            selected = _dedupe_contacts(selected)
+            selected = [
+                contact
+                for contact in selected
+                if not _normalize_email(contact.contact_email)
+                or _normalize_email(contact.contact_email) not in seen_contact_emails_by_run[lead_run_id]
+            ]
             sheet_store.append_contacts(selected)
+            for contact in selected:
+                email = _normalize_email(contact.contact_email)
+                if email:
+                    seen_contact_emails_by_run[lead_run_id].add(email)
             total_contacts += len(selected)
             status = Status.PENDING_SEQUENCE if selected else Status.NO_CONTACT_FOUND
             sheet_store.update_rows(

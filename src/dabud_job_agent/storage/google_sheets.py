@@ -206,11 +206,17 @@ class GoogleSheetsStore:
         for seq in sequences:
             payload = seq.model_dump()
             match_idx = None
+            payload_job_url = str(payload.get("job_url", "")).strip()
             for idx, row in enumerate(rows, start=2):
+                same_run = str(row.get("run_id", "")) == payload.get("run_id", "")
+                same_email = str(row.get("contact_email", "")) == payload.get("contact_email", "")
+                if not (same_run and same_email):
+                    continue
+                if payload_job_url and str(row.get("job_url", "")).strip() == payload_job_url:
+                    match_idx = idx
+                    break
                 if (
-                    str(row.get("run_id", "")) == payload.get("run_id", "")
-                    and str(row.get("company_domain", "")) == payload.get("company_domain", "")
-                    and str(row.get("contact_email", "")) == payload.get("contact_email", "")
+                    str(row.get("company_domain", "")) == payload.get("company_domain", "")
                 ):
                     match_idx = idx
                     break

@@ -116,6 +116,7 @@ class ClaudeClient:
 
         return EmailSequence(
             run_id=job.run_id,
+            job_url=job.job_url,
             company_domain=job.company_domain,
             company_name=job.company_name,
             contact_email=contact.contact_email,
