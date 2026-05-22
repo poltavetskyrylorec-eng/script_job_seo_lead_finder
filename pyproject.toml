@@ -1,0 +1,50 @@
+[project]
+name = "dabud-au-job-agent"
+version = "0.1.0"
+description = "AU SEO/GEO hiring-intent discovery and outreach preparation agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12.3",
+  "google-api-python-client>=2.170.0",
+  "google-auth>=2.40.0",
+  "gspread>=6.1.2",
+  "httpx>=0.28.1",
+  "playwright>=1.54.0",
+  "pydantic>=2.11.4",
+  "pydantic-settings>=2.9.1",
+  "python-dotenv>=1.1.0",
+  "tenacity>=9.1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=1.0.0",
+  "ruff>=0.11.9",
+]
+
+[project.scripts]
+dabud-job-agent = "dabud_job_agent.main:main"
+
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "C4", "SIM", "RUF"]
+ignore = ["E501"]

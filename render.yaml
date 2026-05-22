@@ -1,0 +1,82 @@
+services:
+  - type: cron
+    name: dabud-run-all
+    runtime: docker
+    plan: starter
+    schedule: "0 23 * * *" # 02:00 Kyiv (UTC+3, літній час)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m dabud_job_agent.main run-all
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DRY_RUN
+        value: "false"
+      - key: TIMEZONE
+        value: Australia/Sydney
+      - key: RUN_LOOKBACK_HOURS
+        value: "24"
+      - key: MIN_COMPANY_SIZE
+        value: "5"
+      - key: MIN_SALARY_AUD
+        value: "50000"
+      - key: EXCLUDE_LOW_SALARY
+        value: "false"
+      - key: HTTP_TIMEOUT_SECONDS
+        value: "20"
+      - key: MAX_RETRIES
+        value: "3"
+      - key: MAX_CONTACTS_PER_COMPANY
+        value: "2"
+      - key: JOB_SEARCH_PROVIDER
+        value: browser
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-4-6
+      - key: CLAUDE_CODE_OAUTH_TOKEN
+        sync: false
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON_BASE64
+        sync: false
+      - key: SNOV_CLIENT_ID
+        sync: false
+      - key: SNOV_CLIENT_SECRET
+        sync: false
+      - key: SNOV_PLATFORM_LIST_ID
+        sync: false
+      - key: SNOV_PARTNER_LIST_ID
+        sync: false
+      - key: SNOV_CAMPAIGN_ID
+        sync: false
+
+  - type: cron
+    name: dabud-push-approved
+    runtime: docker
+    plan: starter
+    schedule: "0 6,12,21 * * *" # 09:00, 15:00, 00:00 Kyiv (UTC+3, літній час)
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m dabud_job_agent.main push-approved
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: DRY_RUN
+        value: "false"
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-4-6
+      - key: CLAUDE_CODE_OAUTH_TOKEN
+        sync: false
+      - key: GOOGLE_SHEETS_SPREADSHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON_BASE64
+        sync: false
+      - key: SNOV_CLIENT_ID
+        sync: false
+      - key: SNOV_CLIENT_SECRET
+        sync: false
+      - key: SNOV_PLATFORM_LIST_ID
+        sync: false
+      - key: SNOV_PARTNER_LIST_ID
+        sync: false
+      - key: SNOV_CAMPAIGN_ID
+        sync: false
