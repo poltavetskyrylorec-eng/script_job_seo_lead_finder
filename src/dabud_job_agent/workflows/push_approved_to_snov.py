@@ -57,6 +57,7 @@ def _safe_outreach_track(value: str) -> OutreachTrack:
 def _build_job_from_row(row: dict[str, str]) -> JobPosting:
     return JobPosting(
         run_id=str(row.get("run_id", "")),
+        lead_id=str(row.get("lead_id", "")),
         source=str(row.get("source", "")),
         search_query=str(row.get("search_query", "")),
         job_title=str(row.get("job_title", "")),
@@ -82,6 +83,7 @@ def _build_contact_from_sequence_row(row: dict[str, str]) -> Contact:
     last = " ".join(parts[1:]) if len(parts) > 1 else ""
     return Contact(
         run_id=str(row.get("run_id", "")),
+        lead_id=str(row.get("lead_id", "")),
         company_domain=str(row.get("company_domain", "")),
         company_name=str(row.get("company_name", "")),
         contact_first_name=first,
@@ -104,6 +106,11 @@ async def run_push_approved(
 
     sequences = sheet_store.get_rows("sequences")
     leads_rows = sheet_store.get_rows("leads")
+    leads_by_lead_id = {
+        (str(row.get("run_id", "")).strip(), str(row.get("lead_id", "")).strip()): row
+        for row in leads_rows
+        if str(row.get("lead_id", "")).strip()
+    }
     leads_by_key = {
         (str(row.get("run_id", "")), str(row.get("company_domain", "")), str(row.get("company_name", ""))): row
         for row in leads_rows
@@ -118,12 +125,16 @@ async def run_push_approved(
             continue
         if not seq.get("contact_email"):
             continue
-        key = (
-            str(seq.get("run_id", "")),
-            str(seq.get("company_domain", "")),
-            str(seq.get("company_name", "")),
-        )
-        lead_row = leads_by_key.get(key)
+        seq_lead_id = str(seq.get("lead_id", "")).strip()
+        seq_run_id = str(seq.get("run_id", "")).strip()
+        lead_row = leads_by_lead_id.get((seq_run_id, seq_lead_id)) if seq_lead_id else None
+        if lead_row is None:
+            key = (
+                seq_run_id,
+                str(seq.get("company_domain", "")),
+                str(seq.get("company_name", "")),
+            )
+            lead_row = leads_by_key.get(key)
         if not lead_row:
             continue
         job = _build_job_from_row(lead_row)
@@ -154,10 +165,15 @@ async def run_push_approved(
             # User flow: campaign is fed from list automatically, so list push is enough.
             response = await snov.add_prospect_to_list(payload)
             send_status = Status.DRY_RUN if settings.dry_run else Status.PUSHED_TO_SNOV
-            sheet_store.update_rows(
+            sequence_filters = {
+                "run_id": str(seq.get("run_id", "")),
+                "contact_email": str(seq.get("contact_email", "")),
+            }
+            if seq_lead_id:
+                sequence_filters["lead_id"] = seq_lead_id
+            updated = sheet_store.update_rows_where(
                 "sequences",
-                "contact_email",
-                str(seq.get("contact_email", "")),
+                sequence_filters,
                 {
                     "send_status": send_status,
                     "sent_to_snov_at": datetime.now(UTC).isoformat(),
@@ -167,23 +183,63 @@ async def run_push_approved(
                 },
                 limit=1,
             )
-            if response.get("id"):
+            if updated == 0:
                 sheet_store.update_rows(
-                    "contacts",
+                    "sequences",
                     "contact_email",
                     str(seq.get("contact_email", "")),
+                    {
+                        "send_status": send_status,
+                        "sent_to_snov_at": datetime.now(UTC).isoformat(),
+                        "snov_list_id": list_id,
+                        "snov_campaign_id": settings.snov_campaign_id,
+                        "snov_error": "",
+                    },
+                    limit=1,
+                )
+            if response.get("id"):
+                contact_filters = {
+                    "run_id": str(seq.get("run_id", "")),
+                    "contact_email": str(seq.get("contact_email", "")),
+                }
+                if seq_lead_id:
+                    contact_filters["lead_id"] = seq_lead_id
+                updated_contacts = sheet_store.update_rows_where(
+                    "contacts",
+                    contact_filters,
                     {"snov_prospect_id": str(response.get("id"))},
                     limit=1,
                 )
+                if updated_contacts == 0:
+                    sheet_store.update_rows(
+                        "contacts",
+                        "contact_email",
+                        str(seq.get("contact_email", "")),
+                        {"snov_prospect_id": str(response.get("id"))},
+                        limit=1,
+                    )
             pushed += 1
         except Exception as exc:
-            sheet_store.update_rows(
+            sequence_filters = {
+                "run_id": str(seq.get("run_id", "")),
+                "contact_email": str(seq.get("contact_email", "")),
+            }
+            if seq_lead_id:
+                sequence_filters["lead_id"] = seq_lead_id
+            updated = sheet_store.update_rows_where(
                 "sequences",
-                "contact_email",
-                str(seq.get("contact_email", "")),
+                sequence_filters,
                 {"send_status": Status.SNOV_ERROR, "snov_error": str(exc)},
                 limit=1,
             )
+            if updated == 0:
+                sheet_store.update_rows(
+                    "sequences",
+                    "contact_email",
+                    str(seq.get("contact_email", "")),
+                    {"send_status": Status.SNOV_ERROR, "snov_error": str(exc)},
+                    limit=1,
+                )
 
     if run:
         run.approved_pushed_to_snov += pushed

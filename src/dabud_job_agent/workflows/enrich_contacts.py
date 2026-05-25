@@ -40,6 +40,7 @@ def _contacts_from_rows(rows: list[dict[str, str]]) -> list[Contact]:
         contacts.append(
             Contact(
                 run_id=str(row.get("run_id", "")),
+                lead_id=str(row.get("lead_id", "")),
                 company_domain=str(row.get("company_domain", "")),
                 company_name=str(row.get("company_name", "")),
                 contact_first_name=str(row.get("contact_first_name", "")),
@@ -140,6 +141,7 @@ async def run_enrich_contacts(
     processed = 0
     total_contacts = 0
     for lead in pending:
+        lead_id = str(lead.get("lead_id", "")).strip()
         lead_run_id = str(lead.get("run_id", "")).strip()
         if lead_run_id not in seen_contact_emails_by_run:
             existing_for_run = sheet_store.get_rows("contacts", {"run_id": lead_run_id})
@@ -208,6 +210,7 @@ async def run_enrich_contacts(
             typed_contacts: list[Contact] = []
             for contact in contacts:
                 contact.run_id = str(lead.get("run_id", contact.run_id))
+                contact.lead_id = lead_id
                 contact.company_name = str(lead.get("company_name", contact.company_name))
                 contact.company_domain = domain
                 typed_contacts.append(contact)
@@ -231,6 +234,8 @@ async def run_enrich_contacts(
                 if not _normalize_email(contact.contact_email)
                 or _normalize_email(contact.contact_email) not in seen_contact_emails_by_run[lead_run_id]
             ]
+            for contact in selected:
+                contact.lead_id = lead_id
             sheet_store.append_contacts(selected)
             for contact in selected:
                 email = _normalize_email(contact.contact_email)

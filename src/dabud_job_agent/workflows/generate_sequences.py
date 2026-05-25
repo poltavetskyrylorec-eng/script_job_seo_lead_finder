@@ -26,6 +26,20 @@ def _is_invalid_company_name(value: str) -> bool:
     return value.strip().lower() in INVALID_COMPANY_VALUES
 
 
+def _safe_company_type(value: str) -> CompanyType:
+    try:
+        return CompanyType(value)
+    except Exception:
+        return CompanyType.UNKNOWN
+
+
+def _safe_outreach_track(value: str) -> OutreachTrack:
+    try:
+        return OutreachTrack(value)
+    except Exception:
+        return OutreachTrack.PLATFORM
+
+
 def _normalize_email(value: str) -> str:
     return value.strip().lower()
 
@@ -41,6 +55,7 @@ def _has_contact_name(row: dict[str, str]) -> bool:
 def _job_from_lead_row(row: dict[str, str]) -> JobPosting:
     return JobPosting(
         run_id=str(row.get("run_id", "")),
+        lead_id=str(row.get("lead_id", "")),
         source=str(row.get("source", "")),
         search_query=str(row.get("search_query", "")),
         job_title=str(row.get("job_title", "")),
@@ -63,8 +78,8 @@ def _job_from_lead_row(row: dict[str, str]) -> JobPosting:
         mentions_aeo=str(row.get("mentions_aeo", "")).lower() == "true",
         mentions_ai_search=str(row.get("mentions_ai_search", "")).lower() == "true",
         company_size_estimate=int(row.get("company_size_estimate", 0) or 0),
-        company_type=CompanyType(str(row.get("company_type", CompanyType.UNKNOWN.value))),
-        outreach_track=OutreachTrack(str(row.get("outreach_track", OutreachTrack.PLATFORM.value))),
+        company_type=_safe_company_type(str(row.get("company_type", CompanyType.UNKNOWN.value) or "")),
+        outreach_track=_safe_outreach_track(str(row.get("outreach_track", OutreachTrack.PLATFORM.value) or "")),
         competitor_tool_detected=str(row.get("competitor_tool_detected", "")).lower() == "true",
         competitor_tool_names=str(row.get("competitor_tool_names", "")),
         qualification_status=str(row.get("qualification_status", "")),
@@ -80,6 +95,7 @@ def _job_from_lead_row(row: dict[str, str]) -> JobPosting:
 def _contact_from_row(row: dict[str, str]) -> Contact:
     return Contact(
         run_id=str(row.get("run_id", "")),
+        lead_id=str(row.get("lead_id", "")),
         company_domain=str(row.get("company_domain", "")),
         company_name=str(row.get("company_name", "")),
         contact_first_name=str(row.get("contact_first_name", "")),
@@ -124,10 +140,16 @@ async def run_generate_sequences(
             )
             continue
         job = _job_from_lead_row(lead)
-        contacts_rows = sheet_store.get_rows("contacts", {"company_domain": job.company_domain, "run_id": job.run_id})
-        contacts_rows = [
-            row for row in contacts_rows if str(row.get("job_url", "")).strip() == job.job_url or not str(row.get("job_url", "")).strip()
-        ]
+        if job.lead_id:
+            contacts_rows = sheet_store.get_rows("contacts", {"run_id": job.run_id, "lead_id": job.lead_id})
+        else:
+            contacts_rows = sheet_store.get_rows("contacts", {"company_domain": job.company_domain, "run_id": job.run_id})
+            contacts_rows = [
+                row
+                for row in contacts_rows
+                if str(row.get("job_url", "")).strip() == job.job_url
+                or not str(row.get("job_url", "")).strip()
+            ]
         selected_rows = [row for row in contacts_rows if str(row.get("selected_for_outreach", "")).lower() == "true"]
         eligible_rows = []
         for row in selected_rows:

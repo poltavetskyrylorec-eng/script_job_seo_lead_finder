@@ -86,6 +86,10 @@ Tabs auto-created on first run: `pipeline`, `runs`.
 
 `runs` includes `claude_cost_usd` (estimated Claude cost per run).
 
+`pipeline` includes internal key `lead_id` (auto-generated per lead within a run).
+It is used for precise row matching between lead/contact/sequence/push steps.
+Do not edit `lead_id` manually.
+
 Share the spreadsheet with the service account email from your JSON key.
 
 ## Snov.io
@@ -162,6 +166,7 @@ Private repo free tier: 2,000 Actions minutes/month (~33 h). Full daily `run-all
 | `contact_status=no_contact_found` | No Snov prospects for domain |
 | `Snov push 422` | Custom field mismatch (check mapping logs) |
 | Empty `source` rows in pipeline | Fixed in latest storage logic — re-run on clean sheet |
+| Wrong row updated during sequence/push sync | Ensure `pipeline` header contains `lead_id` and do not edit `lead_id` manually |
 
 ## Compliance
 

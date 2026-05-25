@@ -78,7 +78,7 @@ async def _run_command(args: argparse.Namespace) -> int:
     if args.command == "run-all":
         run = RunStats(run_id=f"run-all-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}", started_at=datetime.now(UTC))
         sheet_store.append_run(run)
-        run = await run_discover(settings, sheet_store)
+        run = await run_discover(settings, sheet_store, run=run)
         run = await run_enrich_contacts(settings, sheet_store, run=run)
         run = await run_generate_sequences(settings, sheet_store, run=run)
         if args.push_approved:

@@ -17,8 +17,10 @@ from dabud_job_agent.utils.dates import is_within_last_hours
 from dabud_job_agent.utils.dedupe import (
     canonicalize_url,
     dedupe_jobs,
+    job_id,
     merge_jobs_by_company_signal,
     normalize_domain,
+    sha256_text,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -139,10 +141,15 @@ def _filter_existing_jobs(jobs: list[JobPosting], sheet_store: GoogleSheetsStore
     return output
 
 
-async def run_discover(settings: Settings, sheet_store: GoogleSheetsStore) -> RunStats:
-    run_id = str(uuid4())
-    run = RunStats(run_id=run_id, started_at=datetime.now(UTC), status="running")
-    sheet_store.append_run(run)
+async def run_discover(
+    settings: Settings, sheet_store: GoogleSheetsStore, run: RunStats | None = None
+) -> RunStats:
+    if run is None:
+        run_id = str(uuid4())
+        run = RunStats(run_id=run_id, started_at=datetime.now(UTC), status="running")
+        sheet_store.append_run(run)
+    else:
+        run_id = run.run_id
 
     adapter = (
         BrowserSearchAdapter(settings)
@@ -170,6 +177,9 @@ async def run_discover(settings: Settings, sheet_store: GoogleSheetsStore) -> Ru
 
     qualified: list[JobPosting] = []
     for job in deduped:
+        if not job.lead_id:
+            stable_job_key = job_id(job.source, job.job_url)
+            job.lead_id = sha256_text(f"{run_id}:{stable_job_key}")
         job = classify_company(enrich_company(job))
         ok, reason = _qualify(job, settings)
         if not ok:

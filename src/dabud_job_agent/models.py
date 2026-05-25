@@ -73,6 +73,7 @@ class JobPosting(BaseModel):
     source: str
     job_board_source: str = ""
     search_query: str
+    lead_id: str = ""
     job_title: str
     job_url: str
     published_at: datetime
@@ -114,6 +115,7 @@ class JobPosting(BaseModel):
 
 class Contact(BaseModel):
     run_id: str
+    lead_id: str = ""
     company_domain: str
     company_name: str
     contact_first_name: str = ""
@@ -132,6 +134,7 @@ class Contact(BaseModel):
 
 class EmailSequence(BaseModel):
     run_id: str
+    lead_id: str = ""
     job_url: str = ""
     company_domain: str
     company_name: str

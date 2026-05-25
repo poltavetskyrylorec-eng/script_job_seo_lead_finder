@@ -52,6 +52,7 @@ LEADS_COLUMNS = [
     "approval_status",
     "send_status",
     "error_message",
+    "lead_id",
 ]
 
 CONTACTS_COLUMNS = [
@@ -159,12 +160,26 @@ class GoogleSheetsStore:
         headers, rows = self._get_headers_and_records("pipeline")
         for contact in contacts:
             payload = contact.model_dump()
+            payload_lead_id = str(payload.get("lead_id", "")).strip()
+            payload_run_id = str(payload.get("run_id", "")).strip()
+            payload_domain = str(payload.get("company_domain", "")).strip()
             match_idx = None
             for idx, row in enumerate(rows, start=2):
+                row_run_id = str(row.get("run_id", "")).strip()
+                row_lead_id = str(row.get("lead_id", "")).strip()
+                row_domain = str(row.get("company_domain", "")).strip()
+                row_contact_email = str(row.get("contact_email", "")).strip()
+                same_lead = payload_lead_id and row_lead_id == payload_lead_id
+                same_run = row_run_id == payload_run_id
+                same_domain = row_domain == payload_domain
+                if same_run and same_lead and not row_contact_email:
+                    match_idx = idx
+                    break
                 if (
-                    str(row.get("run_id", "")) == payload.get("run_id", "")
-                    and str(row.get("company_domain", "")) == payload.get("company_domain", "")
-                    and not str(row.get("contact_email", "")).strip()
+                    not payload_lead_id
+                    and same_run
+                    and same_domain
+                    and not row_contact_email
                 ):
                     match_idx = idx
                     break
@@ -175,8 +190,17 @@ class GoogleSheetsStore:
                     (
                         row
                         for row in rows
-                        if str(row.get("run_id", "")) == payload.get("run_id", "")
-                        and str(row.get("company_domain", "")) == payload.get("company_domain", "")
+                        if str(row.get("run_id", "")).strip() == payload_run_id
+                        and (
+                            (
+                                payload_lead_id
+                                and str(row.get("lead_id", "")).strip() == payload_lead_id
+                            )
+                            or (
+                                not payload_lead_id
+                                and str(row.get("company_domain", "")).strip() == payload_domain
+                            )
+                        )
                     ),
                     None,
                 )
@@ -187,11 +211,15 @@ class GoogleSheetsStore:
                     )
                     continue
                 new_row = dict(template_row)
+                if payload_lead_id:
+                    new_row["lead_id"] = payload_lead_id
                 for key in CONTACTS_COLUMNS:
                     new_row[key] = payload.get(key, "")
                 ws.append_row(self._model_to_row(new_row, headers), value_input_option="USER_ENTERED")
                 rows.append(new_row)
                 continue
+            if payload_lead_id:
+                rows[match_idx - 2]["lead_id"] = payload_lead_id
             for key in CONTACTS_COLUMNS:
                 rows[match_idx - 2][key] = payload.get(key, "")
             end_cell = rowcol_to_a1(match_idx, len(headers))
@@ -207,11 +235,20 @@ class GoogleSheetsStore:
             payload = seq.model_dump()
             match_idx = None
             payload_job_url = str(payload.get("job_url", "")).strip()
+            payload_run_id = str(payload.get("run_id", "")).strip()
+            payload_lead_id = str(payload.get("lead_id", "")).strip()
+            payload_contact_email = str(payload.get("contact_email", "")).strip()
             for idx, row in enumerate(rows, start=2):
-                same_run = str(row.get("run_id", "")) == payload.get("run_id", "")
-                same_email = str(row.get("contact_email", "")) == payload.get("contact_email", "")
+                row_run_id = str(row.get("run_id", "")).strip()
+                row_lead_id = str(row.get("lead_id", "")).strip()
+                row_contact_email = str(row.get("contact_email", "")).strip()
+                same_run = row_run_id == payload_run_id
+                same_email = row_contact_email == payload_contact_email
                 if not (same_run and same_email):
                     continue
+                if payload_lead_id and row_lead_id == payload_lead_id:
+                    match_idx = idx
+                    break
                 if payload_job_url and str(row.get("job_url", "")).strip() == payload_job_url:
                     match_idx = idx
                     break
@@ -225,8 +262,17 @@ class GoogleSheetsStore:
                     (
                         row
                         for row in rows
-                        if str(row.get("run_id", "")) == payload.get("run_id", "")
-                        and str(row.get("company_domain", "")) == payload.get("company_domain", "")
+                        if str(row.get("run_id", "")).strip() == payload_run_id
+                        and (
+                            (
+                                payload_lead_id
+                                and str(row.get("lead_id", "")).strip() == payload_lead_id
+                            )
+                            or (
+                                not payload_lead_id
+                                and str(row.get("company_domain", "")).strip() == str(payload.get("company_domain", "")).strip()
+                            )
+                        )
                     ),
                     None,
                 )
@@ -241,6 +287,8 @@ class GoogleSheetsStore:
                     )
                     continue
                 new_row = dict(template_row)
+                if payload_lead_id:
+                    new_row["lead_id"] = payload_lead_id
                 new_row["contact_email"] = payload.get("contact_email", new_row.get("contact_email", ""))
                 new_row["contact_full_name"] = payload.get("contact_full_name", new_row.get("contact_full_name", ""))
                 for key in (*SEQUENCES_COLUMNS, "approval_status", "send_status", "outreach_track"):
@@ -248,6 +296,8 @@ class GoogleSheetsStore:
                 ws.append_row(self._model_to_row(new_row, headers), value_input_option="USER_ENTERED")
                 rows.append(new_row)
                 continue
+            if payload_lead_id:
+                rows[match_idx - 2]["lead_id"] = payload_lead_id
             for key in (*SEQUENCES_COLUMNS, "approval_status", "send_status", "outreach_track"):
                 rows[match_idx - 2][key] = payload.get(key, "")
             end_cell = rowcol_to_a1(match_idx, len(headers))
@@ -297,6 +347,38 @@ class GoogleSheetsStore:
         updates = 0
         for idx, row in enumerate(records, start=2):
             if str(row.get(match_key, "")).strip() != match_value:
+                continue
+            for key, value in values.items():
+                if key not in headers:
+                    LOGGER.warning("Unknown column in update", extra={"error": key})
+                    continue
+                safe_value = value.value if hasattr(value, "value") else value
+                if isinstance(safe_value, (datetime, date)):
+                    safe_value = safe_value.isoformat()
+                records[idx - 2][key] = safe_value
+            end_cell = rowcol_to_a1(idx, len(headers))
+            ws.update(f"A{idx}:{end_cell}", [self._model_to_row(records[idx - 2], headers)])
+            updates += 1
+            if limit and updates >= limit:
+                break
+        self._set_cached_records(ws_title, headers, records)
+        return updates
+
+    def update_rows_where(
+        self, tab: str, filters: dict[str, str], values: dict[str, Any], limit: int = 0
+    ) -> int:
+        ws_title = self._tab_alias(tab)
+        ws = self.sheet.worksheet(ws_title)
+        headers, records = self._get_headers_and_records(ws_title)
+        updates = 0
+        normalized_filters = {key: str(value).strip() for key, value in filters.items()}
+        for idx, row in enumerate(records, start=2):
+            matched = True
+            for key, value in normalized_filters.items():
+                if str(row.get(key, "")).strip() != value:
+                    matched = False
+                    break
+            if not matched:
                 continue
             for key, value in values.items():
                 if key not in headers:

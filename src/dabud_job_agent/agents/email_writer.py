@@ -52,6 +52,7 @@ def build_fallback_sequence(job: JobPosting, contact: Contact) -> EmailSequence:
 
     return EmailSequence(
         run_id=job.run_id,
+        lead_id=job.lead_id,
         company_domain=job.company_domain,
         company_name=job.company_name,
         contact_email=contact.contact_email,
