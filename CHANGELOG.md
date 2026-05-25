@@ -10,7 +10,6 @@
 
 ### Документація та інструменти
 - Створено цей файл `CHANGELOG.md` для ведення історії змін по датах.
-- Створено персональний Cursor skill **`ukrainian-senior-engineer`** (`~/.cursor/skills/ukrainian-senior-engineer/SKILL.md`) — відповіді українською та Senior/Staff-стандарти розробки.
 
 ---
 
